@@ -5,8 +5,9 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .conv import Conv, DWConv, GhostConv, LightConv, RepConv, autopad
+from .conv import Conv, DWConv, GhostConv, LightConv, RepConv
 from .transformer import TransformerBlock
+from .clip_model import VisualTransformer
 
 __all__ = (
     "DFL",
@@ -18,6 +19,7 @@ __all__ = (
     "C2",
     "C3",
     "C2f",
+    "ViT",
     "C2fAttn",
     "ImagePoolingAttn",
     "ContrastiveHead",
@@ -31,12 +33,6 @@ __all__ = (
     "Proto",
     "RepC3",
     "ResNetLayer",
-    "RepNCSPELAN4",
-    "ADown",
-    "SPPELAN",
-    "CBFuse",
-    "CBLinear",
-    "Silence",
 )
 
 
@@ -57,7 +53,7 @@ class DFL(nn.Module):
 
     def forward(self, x):
         """Applies a transformer layer on input tensor 'x' and returns a tensor."""
-        b, _, a = x.shape  # batch, channels, anchors
+        b, c, a = x.shape  # batch, channels, anchors
         return self.conv(x.view(b, 4, self.c1, a).transpose(2, 1).softmax(1)).view(b, 4, a)
         # return self.conv(x.view(b, self.c1, 4, a).softmax(1)).view(b, 4, a)
 
@@ -171,9 +167,10 @@ class SPPF(nn.Module):
 
     def forward(self, x):
         """Forward pass through Ghost Convolution block."""
-        y = [self.cv1(x)]
-        y.extend(self.m(y[-1]) for _ in range(3))
-        return self.cv2(torch.cat(y, 1))
+        x = self.cv1(x)
+        y1 = self.m(x)
+        y2 = self.m(y1)
+        return self.cv2(torch.cat((x, y1, y2, self.m(y2)), 1))
 
 
 class C1(nn.Module):
@@ -235,6 +232,16 @@ class C2f(nn.Module):
         y = list(self.cv1(x).split((self.c, self.c), 1))
         y.extend(m(y[-1]) for m in self.m)
         return self.cv2(torch.cat(y, 1))
+
+
+class ViT(nn.Module):
+    def __init__(self, input_channel: int, input_resolution: int, patch_size: int, width: int, layers: int, heads: int, output_dim: int,
+                 resolution_after: int):
+        super().__init__()
+        self.vit = VisualTransformer(input_channel, input_resolution, patch_size, width, layers, heads, output_dim, resolution_after)
+
+    def forward(self, x):
+        return self.vit(x)
 
 
 class C3(nn.Module):
@@ -519,8 +526,7 @@ class ContrastiveHead(nn.Module):
     def __init__(self):
         """Initializes ContrastiveHead with specified region-text similarity parameters."""
         super().__init__()
-        # NOTE: use -10.0 to keep the init cls loss consistency with other losses
-        self.bias = nn.Parameter(torch.tensor([-10.0]))
+        self.bias = nn.Parameter(torch.zeros([]))
         self.logit_scale = nn.Parameter(torch.ones([]) * torch.tensor(1 / 0.07).log())
 
     def forward(self, x, w):
@@ -537,14 +543,14 @@ class BNContrastiveHead(nn.Module):
 
     Args:
         embed_dims (int): Embed dimensions of text and image features.
+        norm_cfg (dict): Normalization parameters.
     """
 
     def __init__(self, embed_dims: int):
         """Initialize ContrastiveHead with region-text similarity parameters."""
         super().__init__()
         self.norm = nn.BatchNorm2d(embed_dims)
-        # NOTE: use -10.0 to keep the init cls loss consistency with other losses
-        self.bias = nn.Parameter(torch.tensor([-10.0]))
+        self.bias = nn.Parameter(torch.zeros([]))
         # use -1.0 is more stable
         self.logit_scale = nn.Parameter(-1.0 * torch.ones([]))
 
@@ -554,133 +560,3 @@ class BNContrastiveHead(nn.Module):
         w = F.normalize(w, dim=-1, p=2)
         x = torch.einsum("bchw,bkc->bkhw", x, w)
         return x * self.logit_scale.exp() + self.bias
-
-
-class RepBottleneck(Bottleneck):
-    """Rep bottleneck."""
-
-    def __init__(self, c1, c2, shortcut=True, g=1, k=(3, 3), e=0.5):
-        """Initializes a RepBottleneck module with customizable in/out channels, shortcut option, groups and expansion
-        ratio.
-        """
-        super().__init__(c1, c2, shortcut, g, k, e)
-        c_ = int(c2 * e)  # hidden channels
-        self.cv1 = RepConv(c1, c_, k[0], 1)
-
-
-class RepCSP(C3):
-    """Rep CSP Bottleneck with 3 convolutions."""
-
-    def __init__(self, c1, c2, n=1, shortcut=True, g=1, e=0.5):
-        """Initializes RepCSP layer with given channels, repetitions, shortcut, groups and expansion ratio."""
-        super().__init__(c1, c2, n, shortcut, g, e)
-        c_ = int(c2 * e)  # hidden channels
-        self.m = nn.Sequential(*(RepBottleneck(c_, c_, shortcut, g, e=1.0) for _ in range(n)))
-
-
-class RepNCSPELAN4(nn.Module):
-    """CSP-ELAN."""
-
-    def __init__(self, c1, c2, c3, c4, n=1):
-        """Initializes CSP-ELAN layer with specified channel sizes, repetitions, and convolutions."""
-        super().__init__()
-        self.c = c3 // 2
-        self.cv1 = Conv(c1, c3, 1, 1)
-        self.cv2 = nn.Sequential(RepCSP(c3 // 2, c4, n), Conv(c4, c4, 3, 1))
-        self.cv3 = nn.Sequential(RepCSP(c4, c4, n), Conv(c4, c4, 3, 1))
-        self.cv4 = Conv(c3 + (2 * c4), c2, 1, 1)
-
-    def forward(self, x):
-        """Forward pass through RepNCSPELAN4 layer."""
-        y = list(self.cv1(x).chunk(2, 1))
-        y.extend((m(y[-1])) for m in [self.cv2, self.cv3])
-        return self.cv4(torch.cat(y, 1))
-
-    def forward_split(self, x):
-        """Forward pass using split() instead of chunk()."""
-        y = list(self.cv1(x).split((self.c, self.c), 1))
-        y.extend(m(y[-1]) for m in [self.cv2, self.cv3])
-        return self.cv4(torch.cat(y, 1))
-
-
-class ADown(nn.Module):
-    """ADown."""
-
-    def __init__(self, c1, c2):
-        """Initializes ADown module with convolution layers to downsample input from channels c1 to c2."""
-        super().__init__()
-        self.c = c2 // 2
-        self.cv1 = Conv(c1 // 2, self.c, 3, 2, 1)
-        self.cv2 = Conv(c1 // 2, self.c, 1, 1, 0)
-
-    def forward(self, x):
-        """Forward pass through ADown layer."""
-        x = torch.nn.functional.avg_pool2d(x, 2, 1, 0, False, True)
-        x1, x2 = x.chunk(2, 1)
-        x1 = self.cv1(x1)
-        x2 = torch.nn.functional.max_pool2d(x2, 3, 2, 1)
-        x2 = self.cv2(x2)
-        return torch.cat((x1, x2), 1)
-
-
-class SPPELAN(nn.Module):
-    """SPP-ELAN."""
-
-    def __init__(self, c1, c2, c3, k=5):
-        """Initializes SPP-ELAN block with convolution and max pooling layers for spatial pyramid pooling."""
-        super().__init__()
-        self.c = c3
-        self.cv1 = Conv(c1, c3, 1, 1)
-        self.cv2 = nn.MaxPool2d(kernel_size=k, stride=1, padding=k // 2)
-        self.cv3 = nn.MaxPool2d(kernel_size=k, stride=1, padding=k // 2)
-        self.cv4 = nn.MaxPool2d(kernel_size=k, stride=1, padding=k // 2)
-        self.cv5 = Conv(4 * c3, c2, 1, 1)
-
-    def forward(self, x):
-        """Forward pass through SPPELAN layer."""
-        y = [self.cv1(x)]
-        y.extend(m(y[-1]) for m in [self.cv2, self.cv3, self.cv4])
-        return self.cv5(torch.cat(y, 1))
-
-
-class Silence(nn.Module):
-    """Silence."""
-
-    def __init__(self):
-        """Initializes the Silence module."""
-        super(Silence, self).__init__()
-
-    def forward(self, x):
-        """Forward pass through Silence layer."""
-        return x
-
-
-class CBLinear(nn.Module):
-    """CBLinear."""
-
-    def __init__(self, c1, c2s, k=1, s=1, p=None, g=1):
-        """Initializes the CBLinear module, passing inputs unchanged."""
-        super(CBLinear, self).__init__()
-        self.c2s = c2s
-        self.conv = nn.Conv2d(c1, sum(c2s), k, s, autopad(k, p), groups=g, bias=True)
-
-    def forward(self, x):
-        """Forward pass through CBLinear layer."""
-        outs = self.conv(x).split(self.c2s, dim=1)
-        return outs
-
-
-class CBFuse(nn.Module):
-    """CBFuse."""
-
-    def __init__(self, idx):
-        """Initializes CBFuse module with layer index for selective feature fusion."""
-        super(CBFuse, self).__init__()
-        self.idx = idx
-
-    def forward(self, xs):
-        """Forward pass through CBFuse layer."""
-        target_size = xs[-1].shape[2:]
-        res = [F.interpolate(x[self.idx[i]], size=target_size, mode="nearest") for i, x in enumerate(xs[:-1])]
-        out = torch.sum(torch.stack(res + xs[-1:]), dim=0)
-        return out

@@ -9,6 +9,10 @@ try:
     import wandb as wb
 
     assert hasattr(wb, "__version__")  # verify package is not directory
+
+    import numpy as np
+    import pandas as pd
+
     _processed_plots = {}
 
 except (ImportError, AssertionError):
@@ -34,9 +38,7 @@ def _custom_table(x, y, classes, title="Precision Recall Curve", x_title="Recall
     Returns:
         (wandb.Object): A wandb object suitable for logging, showcasing the crafted metric visualization.
     """
-    import pandas  # scope for faster 'import ultralytics'
-
-    df = pandas.DataFrame({"class": classes, "y": y, "x": x}).round(3)
+    df = pd.DataFrame({"class": classes, "y": y, "x": x}).round(3)
     fields = {"x": "x", "y": "y", "class": "class"}
     string_fields = {"title": title, "x-axis-title": x_title, "y-axis-title": y_title}
     return wb.plot_table(
@@ -75,8 +77,6 @@ def _plot_curve(
     Note:
         The function leverages the '_custom_table' function to generate the actual visualization.
     """
-    import numpy as np
-
     # Create new x
     if names is None:
         names = []

@@ -2,11 +2,11 @@
 
 import numpy as np
 
-from ..utils import LOGGER
-from ..utils.ops import xywh2ltwh
 from .basetrack import BaseTrack, TrackState
 from .utils import matching
 from .utils.kalman_filter import KalmanFilterXYAH
+from ..utils.ops import xywh2ltwh
+from ..utils import LOGGER
 
 
 class STrack(BaseTrack):
@@ -47,7 +47,7 @@ class STrack(BaseTrack):
         """Initialize new STrack instance."""
         super().__init__()
         # xywh+idx or xywha+idx
-        assert len(xywh) in {5, 6}, f"expected 5 or 6 values but got {len(xywh)}"
+        assert len(xywh) in [5, 6], f"expected 5 or 6 values but got {len(xywh)}"
         self._tlwh = np.asarray(xywh2ltwh(xywh[:4]), dtype=np.float32)
         self.kalman_filter = None
         self.mean, self.covariance = None, None
@@ -235,7 +235,7 @@ class BYTETracker:
         reset_id(): Resets the ID counter of STrack.
         joint_stracks(tlista, tlistb): Combines two lists of stracks.
         sub_stracks(tlista, tlistb): Filters out the stracks present in the second list from the first list.
-        remove_duplicate_stracks(stracksa, stracksb): Removes duplicate stracks based on IoU.
+        remove_duplicate_stracks(stracksa, stracksb): Removes duplicate stracks based on IOU.
     """
 
     def __init__(self, args, frame_rate=30):
@@ -264,11 +264,11 @@ class BYTETracker:
         bboxes = np.concatenate([bboxes, np.arange(len(bboxes)).reshape(-1, 1)], axis=-1)
         cls = results.cls
 
-        remain_inds = scores >= self.args.track_high_thresh
+        remain_inds = scores > self.args.track_high_thresh
         inds_low = scores > self.args.track_low_thresh
         inds_high = scores < self.args.track_high_thresh
 
-        inds_second = inds_low & inds_high
+        inds_second = np.logical_and(inds_low, inds_high)
         dets_second = bboxes[inds_second]
         dets = bboxes[remain_inds]
         scores_keep = scores[remain_inds]
@@ -373,7 +373,7 @@ class BYTETracker:
         return [STrack(xyxy, s, c) for (xyxy, s, c) in zip(dets, scores, cls)] if len(dets) else []  # detections
 
     def get_dists(self, tracks, detections):
-        """Calculates the distance between tracks and detections using IoU and fuses scores."""
+        """Calculates the distance between tracks and detections using IOU and fuses scores."""
         dists = matching.iou_distance(tracks, detections)
         # TODO: mot20
         # if not self.args.mot20:
@@ -428,7 +428,7 @@ class BYTETracker:
 
     @staticmethod
     def remove_duplicate_stracks(stracksa, stracksb):
-        """Remove duplicate stracks with non-maximum IoU distance."""
+        """Remove duplicate stracks with non-maximum IOU distance."""
         pdist = matching.iou_distance(stracksa, stracksb)
         pairs = np.where(pdist < 0.15)
         dupa, dupb = [], []

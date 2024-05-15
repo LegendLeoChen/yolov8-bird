@@ -69,7 +69,6 @@ Ultralytics YOLO models return either a Python list of `Results` objects, or a m
             masks = result.masks  # Masks object for segmentation masks outputs
             keypoints = result.keypoints  # Keypoints object for pose outputs
             probs = result.probs  # Probs object for classification outputs
-            obb = result.obb  # Oriented boxes object for OBB outputs
             result.show()  # display to screen
             result.save(filename='result.jpg')  # save to disk
         ```
@@ -91,7 +90,6 @@ Ultralytics YOLO models return either a Python list of `Results` objects, or a m
             masks = result.masks  # Masks object for segmentation masks outputs
             keypoints = result.keypoints  # Keypoints object for pose outputs
             probs = result.probs  # Probs object for classification outputs
-            obb = result.obb  # Oriented boxes object for OBB outputs
             result.show()  # display to screen
             result.save(filename='result.jpg')  # save to disk
         ```
@@ -366,7 +364,7 @@ Inference arguments:
 |-----------------|----------------|------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `source`        | `str`          | `'ultralytics/assets'` | Specifies the data source for inference. Can be an image path, video file, directory, URL, or device ID for live feeds. Supports a wide range of formats and sources, enabling flexible application across different types of input. |
 | `conf`          | `float`        | `0.25`                 | Sets the minimum confidence threshold for detections. Objects detected with confidence below this threshold will be disregarded. Adjusting this value can help reduce false positives.                                               |
-| `iou`           | `float`        | `0.7`                  | Intersection Over Union (IoU) threshold for Non-Maximum Suppression (NMS). Lower values result in fewer detections by eliminating overlapping boxes, useful for reducing duplicates.                                                 |
+| `iou`           | `float`        | `0.7`                  | Intersection Over Union (IoU) threshold for Non-Maximum Suppression (NMS). Higher values result in fewer detections by eliminating overlapping boxes, useful for reducing duplicates.                                                |
 | `imgsz`         | `int or tuple` | `640`                  | Defines the image size for inference. Can be a single integer `640` for square resizing or a (height, width) tuple. Proper sizing can improve detection accuracy and processing speed.                                               |
 | `half`          | `bool`         | `False`                | Enables half-precision (FP16) inference, which can speed up model inference on supported GPUs with minimal impact on accuracy.                                                                                                       |
 | `device`        | `str`          | `None`                 | Specifies the device for inference (e.g., `cpu`, `cuda:0` or `0`). Allows users to select between CPU, a specific GPU, or other compute devices for model execution.                                                                 |
@@ -406,7 +404,7 @@ The below table contains valid Ultralytics image formats.
 | Image Suffixes | Example Predict Command          | Reference                                                                     |
 |----------------|----------------------------------|-------------------------------------------------------------------------------|
 | `.bmp`         | `yolo predict source=image.bmp`  | [Microsoft BMP File Format](https://en.wikipedia.org/wiki/BMP_file_format)    |
-| `.dng`         | `yolo predict source=image.dng`  | [Adobe DNG](https://helpx.adobe.com/camera-raw/digital-negative.html)         |
+| `.dng`         | `yolo predict source=image.dng`  | [Adobe DNG](https://www.adobe.com/products/photoshop/extend.displayTab2.html) |
 | `.jpeg`        | `yolo predict source=image.jpeg` | [JPEG](https://en.wikipedia.org/wiki/JPEG)                                    |
 | `.jpg`         | `yolo predict source=image.jpg`  | [JPEG](https://en.wikipedia.org/wiki/JPEG)                                    |
 | `.mpo`         | `yolo predict source=image.mpo`  | [Multi Picture Object](https://fileinfo.com/extension/mpo)                    |
@@ -685,7 +683,7 @@ The `plot()` method in `Results` objects facilitates visualization of prediction
     for i, r in enumerate(results):
         # Plot results image
         im_bgr = r.plot()  # BGR-order numpy array
-        im_rgb = Image.fromarray(im_bgr[..., ::-1])  # RGB-order PIL image
+        im_rgb = Image.fromarray(im_array[..., ::-1])  # RGB-order PIL image
         
         # Show results to screen (in supported environments)
         r.show()
@@ -731,7 +729,7 @@ When using YOLO models in a multi-threaded application, it's important to instan
     from threading import Thread
 
     def thread_safe_predict(image_path):
-        """Performs thread-safe prediction on an image using a locally instantiated YOLO model."""
+        # Instantiate a new model inside the thread
         local_model = YOLO("yolov8n.pt")
         results = local_model.predict(image_path)
         # Process results

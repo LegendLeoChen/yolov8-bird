@@ -7,7 +7,6 @@ import torch.nn.functional as F
 from ultralytics.utils.metrics import OKS_SIGMA
 from ultralytics.utils.ops import crop_mask, xywh2xyxy, xyxy2xywh
 from ultralytics.utils.tal import RotatedTaskAlignedAssigner, TaskAlignedAssigner, dist2bbox, dist2rbox, make_anchors
-
 from .metrics import bbox_iou, probiou
 from .tal import bbox2dist
 
@@ -74,7 +73,7 @@ class BboxLoss(nn.Module):
         """IoU loss."""
         weight = target_scores.sum(-1)[fg_mask].unsqueeze(-1)
         iou = bbox_iou(pred_bboxes[fg_mask], target_bboxes[fg_mask], xywh=False, CIoU=True)
-        loss_iou = ((1.0 - iou) * weight).sum() / target_scores_sum
+        loss_iou = ((1 - iou) * weight).sum() / target_scores_sum
 
         # DFL loss
         if self.use_dfl:
@@ -136,13 +135,58 @@ class KeypointLoss(nn.Module):
         super().__init__()
         self.sigmas = sigmas
 
-    def forward(self, pred_kpts, gt_kpts, kpt_mask, area):
+    def forward(self, pred_kpts, gt_kpts, kpt_mask, area, new_poseloss=True):
+        def calculate_angle(p1, p2, p3, p4):
+            """
+            计算两条线段之间的夹角的余弦相似度
+            """
+            dx1 = p2[..., 0] - p1[..., 0]
+            dy1 = p2[..., 1] - p1[..., 1]
+            dx2 = p4[..., 0] - p3[..., 0]
+            dy2 = p4[..., 1] - p3[..., 1]
+            d1 = torch.sqrt((p1[..., 0] - p3[..., 0]) ** 2 + (p1[..., 1] - p3[..., 1]) ** 2)
+            d2 = torch.sqrt((p2[..., 0] - p4[..., 0]) ** 2 + (p2[..., 1] - p4[..., 1]) ** 2)
+            dot_product = dx1 * dx2 + dy1 * dy2
+            norm1 = torch.sqrt(dx1 ** 2 + dy1 ** 2)
+            norm2 = torch.sqrt(dx2 ** 2 + dy2 ** 2)
+            cosine_sim = dot_product / (norm2 * norm1 + 1e-9)
+            norm_factor = 1 - torch.exp(-norm2 / 20 * 2)
+            distance_factor = (d1 + d2) / 2
+            return (1 - (cosine_sim + 1) / 2) * distance_factor * norm_factor
+
+        def calculate_area(p1, p2, p3, p4):
+            # 计算最小矩形的宽度
+            min_x = torch.min(torch.min(p1[..., 0], p2[..., 0]), torch.min(p3[..., 0], p4[..., 0]))
+            max_x = torch.max(torch.max(p1[..., 0], p2[..., 0]), torch.max(p3[..., 0], p4[..., 0]))
+            width = (max_x - min_x).unsqueeze(1)
+            # 计算最小矩形的高度
+            min_y = torch.min(torch.min(p1[..., 1], p2[..., 1]), torch.min(p3[..., 1], p4[..., 1]))
+            max_y = torch.max(torch.max(p1[..., 1], p2[..., 1]), torch.max(p3[..., 1], p4[..., 1]))
+            height = (max_y - min_y).unsqueeze(1)
+            # 计算最小矩形的面积
+            min_area = width * height / area
+            return min_area
+
         """Calculates keypoint loss factor and Euclidean distance loss for predicted and actual keypoints."""
-        d = (pred_kpts[..., 0] - gt_kpts[..., 0]).pow(2) + (pred_kpts[..., 1] - gt_kpts[..., 1]).pow(2)
+        # 计算欧式距离的平方
+        d = (pred_kpts[..., 0] - gt_kpts[..., 0]) ** 2 + (pred_kpts[..., 1] - gt_kpts[..., 1]) ** 2
+        # 计算关键点损失因子（均衡不同关键点数的样本损失）
         kpt_loss_factor = kpt_mask.shape[1] / (torch.sum(kpt_mask != 0, dim=1) + 1e-9)
-        # e = d / (2 * (area * self.sigmas) ** 2 + 1e-9)  # from formula
-        e = d / ((2 * self.sigmas).pow(2) * (area + 1e-9) * 2)  # from cocoeval
-        return (kpt_loss_factor.view(-1, 1) * ((1 - torch.exp(-e)) * kpt_mask)).mean()
+        # 计算原始的损失值 e
+        e = d / (2 * self.sigmas) ** 2 / (area + 1e-9) / 2
+        # 计算损失
+        loss = (kpt_loss_factor.view(-1, 1) * ((1 - torch.exp(-e)) * kpt_mask)).mean()
+        if new_poseloss:            # 是否使用新的损失函数
+            # 计算夹角余弦相似度
+            skeleton = [(0, 1, 0.9), (1, 2, 0.8), (1, 3, 0.8), (1, 4, 0.4), (1, 5, 0.4), (1, 6, 0.6), (4, 7, 0.3), (5, 8, 0.3)]
+            kpt_mask_ske = torch.zeros((kpt_mask.shape[0], len(skeleton)), dtype=torch.bool, device=kpt_mask.device)
+            for i, (p1, p2, _) in enumerate(skeleton):
+                kpt_mask_ske[:, i] = kpt_mask[:, p1] & kpt_mask[:, p2]
+            cosine_sim = [calculate_area(pred_kpts[:, p1], pred_kpts[:, p2], gt_kpts[:, p1], gt_kpts[:, p2]) * weight for p1, p2, weight in skeleton]
+            cosine_sim = torch.stack(cosine_sim, dim=1).squeeze(-1)
+            # 将夹角余弦相似度加到损失上
+            loss += 0.1 * (kpt_loss_factor.view(-1, 1) * cosine_sim * kpt_mask_ske).mean()  # 这里可以根据实际情况调整权重
+        return loss
 
 
 class v8DetectionLoss:
@@ -158,7 +202,7 @@ class v8DetectionLoss:
         self.hyp = h
         self.stride = m.stride  # model strides
         self.nc = m.nc  # number of classes
-        self.no = m.nc + m.reg_max * 4
+        self.no = m.no
         self.reg_max = m.reg_max
         self.device = device
 
@@ -598,12 +642,7 @@ class v8ClassificationLoss:
 
 
 class v8OBBLoss(v8DetectionLoss):
-    def __init__(self, model):
-        """
-        Initializes v8OBBLoss with model, assigner, and rotated bbox loss.
-
-        Note model must be de-paralleled.
-        """
+    def __init__(self, model):  # model must be de-paralleled
         super().__init__(model)
         self.assigner = RotatedTaskAlignedAssigner(topk=10, num_classes=self.nc, alpha=0.5, beta=6.0)
         self.bbox_loss = RotatedBboxLoss(self.reg_max - 1, use_dfl=self.use_dfl).to(self.device)

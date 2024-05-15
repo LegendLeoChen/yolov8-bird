@@ -21,27 +21,22 @@ TensorFlow Lite         | `tflite`                  | yolov8n.tflite
 TensorFlow Edge TPU     | `edgetpu`                 | yolov8n_edgetpu.tflite
 TensorFlow.js           | `tfjs`                    | yolov8n_web_model/
 PaddlePaddle            | `paddle`                  | yolov8n_paddle_model/
-NCNN                    | `ncnn`                    | yolov8n_ncnn_model/
+ncnn                    | `ncnn`                    | yolov8n_ncnn_model/
 """
 
 import glob
-import os
 import platform
-import re
-import shutil
 import time
 from pathlib import Path
 
 import numpy as np
 import torch.cuda
-import yaml
 
-from ultralytics import YOLO, YOLOWorld
+from ultralytics import YOLO
 from ultralytics.cfg import TASK2DATA, TASK2METRIC
 from ultralytics.engine.exporter import export_formats
-from ultralytics.utils import ARM64, ASSETS, IS_JETSON, IS_RASPBERRYPI, LINUX, LOGGER, MACOS, TQDM, WEIGHTS_DIR
+from ultralytics.utils import ASSETS, LINUX, LOGGER, MACOS, TQDM, WEIGHTS_DIR
 from ultralytics.utils.checks import IS_PYTHON_3_12, check_requirements, check_yolo
-from ultralytics.utils.downloads import safe_download
 from ultralytics.utils.files import file_size
 from ultralytics.utils.torch_utils import select_device
 
@@ -74,7 +69,8 @@ def benchmark(
         benchmark(model='yolov8n.pt', imgsz=640)
         ```
     """
-    import pandas as pd  # scope for faster 'import ultralytics'
+
+    import pandas as pd
 
     pd.options.display.max_columns = 10
     pd.options.display.width = 120
@@ -88,22 +84,14 @@ def benchmark(
         emoji, filename = "❌", None  # export defaults
         try:
             # Checks
-            if i == 5:  # CoreML
-                assert not (IS_RASPBERRYPI or IS_JETSON), "CoreML export not supported on Raspberry Pi or NVIDIA Jetson"
-            if i == 9:  # Edge TPU
-                assert LINUX and not ARM64, "Edge TPU export only supported on non-aarch64 Linux"
-            elif i == 7:  # TF GraphDef
+            if i == 9:
+                assert LINUX, "Edge TPU export only supported on Linux"
+            elif i == 7:
                 assert model.task != "obb", "TensorFlow GraphDef not supported for OBB task"
             elif i in {5, 10}:  # CoreML and TF.js
                 assert MACOS or LINUX, "export only supported on macOS and Linux"
             if i in {3, 5}:  # CoreML and OpenVINO
                 assert not IS_PYTHON_3_12, "CoreML and OpenVINO not supported on Python 3.12"
-            if i in {6, 7, 8, 9, 10}:  # All TF formats
-                assert not isinstance(model, YOLOWorld), "YOLOWorldv2 TensorFlow exports not supported by onnx2tf yet"
-            if i in {11}:  # Paddle
-                assert not isinstance(model, YOLOWorld), "YOLOWorldv2 Paddle exports not supported yet"
-            if i in {12}:  # NCNN
-                assert not isinstance(model, YOLOWorld), "YOLOWorldv2 NCNN exports not supported yet"
             if "cpu" in device.type:
                 assert cpu, "inference not supported on CPU"
             if "cuda" in device.type:
@@ -121,7 +109,7 @@ def benchmark(
 
             # Predict
             assert model.task != "pose" or i != 7, "GraphDef Pose inference is not supported"
-            assert i not in {9, 10}, "inference not supported"  # Edge TPU and TF.js are unsupported
+            assert i not in (9, 10), "inference not supported"  # Edge TPU and TF.js are unsupported
             assert i != 5 or platform.system() == "Darwin", "inference only supported on macOS>=10.13"  # CoreML
             exported_model.predict(ASSETS / "bus.jpg", imgsz=imgsz, device=device, half=half)
 
@@ -132,17 +120,16 @@ def benchmark(
                 data=data, batch=1, imgsz=imgsz, plots=False, device=device, half=half, int8=int8, verbose=False
             )
             metric, speed = results.results_dict[key], results.speed["inference"]
-            fps = round((1000 / speed), 2)  # frames per second
-            y.append([name, "✅", round(file_size(filename), 1), round(metric, 4), round(speed, 2), fps])
+            y.append([name, "✅", round(file_size(filename), 1), round(metric, 4), round(speed, 2)])
         except Exception as e:
             if verbose:
                 assert type(e) is AssertionError, f"Benchmark failure for {name}: {e}"
             LOGGER.warning(f"ERROR ❌️ Benchmark failure for {name}: {e}")
-            y.append([name, emoji, round(file_size(filename), 1), None, None, None])  # mAP, t_inference
+            y.append([name, emoji, round(file_size(filename), 1), None, None])  # mAP, t_inference
 
     # Print results
     check_yolo(device=device)  # print system info
-    df = pd.DataFrame(y, columns=["Format", "Status❔", "Size (MB)", key, "Inference time (ms/im)", "FPS"])
+    df = pd.DataFrame(y, columns=["Format", "Status❔", "Size (MB)", key, "Inference time (ms/im)"])
 
     name = Path(model.ckpt_path).name
     s = f"\nBenchmarks complete for {name} on {data} at imgsz={imgsz} ({time.time() - t0:.2f}s)\n{df}\n"
@@ -156,133 +143,6 @@ def benchmark(
         assert all(x > floor for x in metrics if pd.notna(x)), f"Benchmark failure: metric(s) < floor {floor}"
 
     return df
-
-
-class RF100Benchmark:
-    def __init__(self):
-        """Function for initialization of RF100Benchmark."""
-        self.ds_names = []
-        self.ds_cfg_list = []
-        self.rf = None
-        self.val_metrics = ["class", "images", "targets", "precision", "recall", "map50", "map95"]
-
-    def set_key(self, api_key):
-        """
-        Set Roboflow API key for processing.
-
-        Args:
-            api_key (str): The API key.
-        """
-
-        check_requirements("roboflow")
-        from roboflow import Roboflow
-
-        self.rf = Roboflow(api_key=api_key)
-
-    def parse_dataset(self, ds_link_txt="datasets_links.txt"):
-        """
-        Parse dataset links and downloads datasets.
-
-        Args:
-            ds_link_txt (str): Path to dataset_links file.
-        """
-
-        (shutil.rmtree("rf-100"), os.mkdir("rf-100")) if os.path.exists("rf-100") else os.mkdir("rf-100")
-        os.chdir("rf-100")
-        os.mkdir("ultralytics-benchmarks")
-        safe_download("https://ultralytics.com/assets/datasets_links.txt")
-
-        with open(ds_link_txt, "r") as file:
-            for line in file:
-                try:
-                    _, url, workspace, project, version = re.split("/+", line.strip())
-                    self.ds_names.append(project)
-                    proj_version = f"{project}-{version}"
-                    if not Path(proj_version).exists():
-                        self.rf.workspace(workspace).project(project).version(version).download("yolov8")
-                    else:
-                        print("Dataset already downloaded.")
-                    self.ds_cfg_list.append(Path.cwd() / proj_version / "data.yaml")
-                except Exception:
-                    continue
-
-        return self.ds_names, self.ds_cfg_list
-
-    def fix_yaml(self, path):
-        """
-        Function to fix yaml train and val path.
-
-        Args:
-            path (str): YAML file path.
-        """
-
-        with open(path, "r") as file:
-            yaml_data = yaml.safe_load(file)
-        yaml_data["train"] = "train/images"
-        yaml_data["val"] = "valid/images"
-        with open(path, "w") as file:
-            yaml.safe_dump(yaml_data, file)
-
-    def evaluate(self, yaml_path, val_log_file, eval_log_file, list_ind):
-        """
-        Model evaluation on validation results.
-
-        Args:
-            yaml_path (str): YAML file path.
-            val_log_file (str): val_log_file path.
-            eval_log_file (str): eval_log_file path.
-            list_ind (int): Index for current dataset.
-        """
-        skip_symbols = ["🚀", "⚠️", "💡", "❌"]
-        with open(yaml_path) as stream:
-            class_names = yaml.safe_load(stream)["names"]
-        with open(val_log_file, "r", encoding="utf-8") as f:
-            lines = f.readlines()
-            eval_lines = []
-            for line in lines:
-                if any(symbol in line for symbol in skip_symbols):
-                    continue
-                entries = line.split(" ")
-                entries = list(filter(lambda val: val != "", entries))
-                entries = [e.strip("\n") for e in entries]
-                start_class = False
-                for e in entries:
-                    if e == "all":
-                        if "(AP)" not in entries:
-                            if "(AR)" not in entries:
-                                # parse all
-                                eval = {}
-                                eval["class"] = entries[0]
-                                eval["images"] = entries[1]
-                                eval["targets"] = entries[2]
-                                eval["precision"] = entries[3]
-                                eval["recall"] = entries[4]
-                                eval["map50"] = entries[5]
-                                eval["map95"] = entries[6]
-                                eval_lines.append(eval)
-
-                    if e in class_names:
-                        eval = {}
-                        eval["class"] = entries[0]
-                        eval["images"] = entries[1]
-                        eval["targets"] = entries[2]
-                        eval["precision"] = entries[3]
-                        eval["recall"] = entries[4]
-                        eval["map50"] = entries[5]
-                        eval["map95"] = entries[6]
-                        eval_lines.append(eval)
-        map_val = 0.0
-        if len(eval_lines) > 1:
-            print("There's more dicts")
-            for lst in eval_lines:
-                if lst["class"] == "all":
-                    map_val = lst["map50"]
-        else:
-            print("There's only one dict res")
-            map_val = [res["map50"] for res in eval_lines][0]
-
-        with open(eval_log_file, "a") as f:
-            f.write(f"{self.ds_names[list_ind]}: {map_val}\n")
 
 
 class ProfileModels:
@@ -354,7 +214,7 @@ class ProfileModels:
         output = []
         for file in files:
             engine_file = file.with_suffix(".engine")
-            if file.suffix in {".pt", ".yaml", ".yml"}:
+            if file.suffix in (".pt", ".yaml", ".yml"):
                 model = YOLO(str(file))
                 model.fuse()  # to report correct params and GFLOPs in model.info()
                 model_info = model.info()
@@ -401,8 +261,7 @@ class ProfileModels:
         """
         return 0.0, 0.0, 0.0, 0.0  # return (num_layers, num_params, num_gradients, num_flops)
 
-    @staticmethod
-    def iterative_sigma_clipping(data, sigma=2, max_iters=3):
+    def iterative_sigma_clipping(self, data, sigma=2, max_iters=3):
         """Applies an iterative sigma clipping algorithm to the given data times number of iterations."""
         data = np.array(data)
         for _ in range(max_iters):
@@ -500,13 +359,9 @@ class ProfileModels:
     def generate_table_row(self, model_name, t_onnx, t_engine, model_info):
         """Generates a formatted string for a table row that includes model performance and metric details."""
         layers, params, gradients, flops = model_info
-        return (
-            f"| {model_name:18s} | {self.imgsz} | - | {t_onnx[0]:.2f} ± {t_onnx[1]:.2f} ms | {t_engine[0]:.2f} ± "
-            f"{t_engine[1]:.2f} ms | {params / 1e6:.1f} | {flops:.1f} |"
-        )
+        return f"| {model_name:18s} | {self.imgsz} | - | {t_onnx[0]:.2f} ± {t_onnx[1]:.2f} ms | {t_engine[0]:.2f} ± {t_engine[1]:.2f} ms | {params / 1e6:.1f} | {flops:.1f} |"
 
-    @staticmethod
-    def generate_results_dict(model_name, t_onnx, t_engine, model_info):
+    def generate_results_dict(self, model_name, t_onnx, t_engine, model_info):
         """Generates a dictionary of model details including name, parameters, GFLOPS and speed metrics."""
         layers, params, gradients, flops = model_info
         return {
@@ -517,18 +372,11 @@ class ProfileModels:
             "model/speed_TensorRT(ms)": round(t_engine[0], 3),
         }
 
-    @staticmethod
-    def print_table(table_rows):
+    def print_table(self, table_rows):
         """Formats and prints a comparison table for different models with given statistics and performance data."""
         gpu = torch.cuda.get_device_name(0) if torch.cuda.is_available() else "GPU"
-        header = (
-            f"| Model | size<br><sup>(pixels) | mAP<sup>val<br>50-95 | Speed<br><sup>CPU ONNX<br>(ms) | "
-            f"Speed<br><sup>{gpu} TensorRT<br>(ms) | params<br><sup>(M) | FLOPs<br><sup>(B) |"
-        )
-        separator = (
-            "|-------------|---------------------|--------------------|------------------------------|"
-            "-----------------------------------|------------------|-----------------|"
-        )
+        header = f"| Model | size<br><sup>(pixels) | mAP<sup>val<br>50-95 | Speed<br><sup>CPU ONNX<br>(ms) | Speed<br><sup>{gpu} TensorRT<br>(ms) | params<br><sup>(M) | FLOPs<br><sup>(B) |"
+        separator = "|-------------|---------------------|--------------------|------------------------------|-----------------------------------|------------------|-----------------|"
 
         print(f"\n\n{header}")
         print(separator)

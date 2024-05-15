@@ -11,10 +11,14 @@ import torch
 
 from ultralytics.utils import LOGGER, SimpleClass, TryExcept, plt_settings
 
+# OKS_SIGMA = (
+#     np.array([0.26, 0.25, 0.25, 0.35, 0.35, 0.79, 0.79, 0.72, 0.72, 0.62, 0.62, 1.07, 1.07, 0.87, 0.87, 0.89, 0.89])
+#     / 10.0
+# )     # 人类
 OKS_SIGMA = (
-    np.array([0.26, 0.25, 0.25, 0.35, 0.35, 0.79, 0.79, 0.72, 0.72, 0.62, 0.62, 1.07, 1.07, 0.87, 0.87, 0.89, 0.89])
+    np.array([0.6, 0.7, 0.8, 0.8, 0.35, 0.35, 0.5, 0.3, 0.3])
     / 10.0
-)
+)       # 鸟类
 
 
 def bbox_ioa(box1, box2, iou=False, eps=1e-7):
@@ -24,7 +28,7 @@ def bbox_ioa(box1, box2, iou=False, eps=1e-7):
     Args:
         box1 (np.ndarray): A numpy array of shape (n, 4) representing n bounding boxes.
         box2 (np.ndarray): A numpy array of shape (m, 4) representing m bounding boxes.
-        iou (bool): Calculate the standard IoU if True else return inter_area/box2_area.
+        iou (bool): Calculate the standard iou if True else return inter_area/box2_area.
         eps (float, optional): A small value to avoid division by zero. Defaults to 1e-7.
 
     Returns:
@@ -72,7 +76,7 @@ def box_iou(box1, box2, eps=1e-7):
     return inter / ((a2 - a1).prod(2) + (b2 - b1).prod(2) - inter + eps)
 
 
-def bbox_iou(box1, box2, xywh=True, GIoU=False, DIoU=False, CIoU=False, eps=1e-7):
+def bbox_iou(box1, box2, xywh=True, GIoU=False, DIoU=False, CIoU=False, WIoU=False, eps=1e-7):
     """
     Calculate Intersection over Union (IoU) of box1(1, 4) to box2(n, 4).
 
@@ -101,6 +105,8 @@ def bbox_iou(box1, box2, xywh=True, GIoU=False, DIoU=False, CIoU=False, eps=1e-7
         b2_x1, b2_y1, b2_x2, b2_y2 = box2.chunk(4, -1)
         w1, h1 = b1_x2 - b1_x1, b1_y2 - b1_y1 + eps
         w2, h2 = b2_x2 - b2_x1, b2_y2 - b2_y1 + eps
+        x1, y1 = b1_x1 + w1 / 2, b1_y1 + h1 / 2
+        x2, y2 = b2_x1 + w2 / 2, b2_y1 + h2 / 2
 
     # Intersection area
     inter = (b1_x2.minimum(b2_x2) - b1_x1.maximum(b2_x1)).clamp_(0) * (
@@ -116,18 +122,22 @@ def bbox_iou(box1, box2, xywh=True, GIoU=False, DIoU=False, CIoU=False, eps=1e-7
         cw = b1_x2.maximum(b2_x2) - b1_x1.minimum(b2_x1)  # convex (smallest enclosing box) width
         ch = b1_y2.maximum(b2_y2) - b1_y1.minimum(b2_y1)  # convex height
         if CIoU or DIoU:  # Distance or Complete IoU https://arxiv.org/abs/1911.08287v1
-            c2 = cw.pow(2) + ch.pow(2) + eps  # convex diagonal squared
-            rho2 = (
-                (b2_x1 + b2_x2 - b1_x1 - b1_x2).pow(2) + (b2_y1 + b2_y2 - b1_y1 - b1_y2).pow(2)
-            ) / 4  # center dist**2
+            c2 = cw**2 + ch**2 + eps  # convex diagonal squared
+            rho2 = ((b2_x1 + b2_x2 - b1_x1 - b1_x2) ** 2 + (b2_y1 + b2_y2 - b1_y1 - b1_y2) ** 2) / 4  # center dist ** 2
             if CIoU:  # https://github.com/Zzh-tju/DIoU-SSD-pytorch/blob/master/utils/box/box_utils.py#L47
-                v = (4 / math.pi**2) * ((w2 / h2).atan() - (w1 / h1).atan()).pow(2)
+                v = (4 / math.pi**2) * (torch.atan(w2 / h2) - torch.atan(w1 / h1)).pow(2)
                 with torch.no_grad():
                     alpha = v / (v - iou + (1 + eps))
                 return iou - (rho2 / c2 + v * alpha)  # CIoU
             return iou - rho2 / c2  # DIoU
         c_area = cw * ch + eps  # convex area
         return iou - (c_area - union) / c_area  # GIoU https://arxiv.org/pdf/1902.09630.pdf
+    elif WIoU:
+        cw = b1_x2.maximum(b2_x2) - b1_x1.minimum(b2_x1)  # convex (smallest enclosing box) width
+        ch = b1_y2.maximum(b2_y2) - b1_y1.minimum(b2_y1)  # convex height
+        distance = (x1 - x2) ** 2 + (y1 - y2) ** 2
+        Rwiou = torch.exp(distance / (cw ** 2 + ch ** 2))
+        return Rwiou * (1 - iou)
     return iou  # IoU
 
 
@@ -164,12 +174,12 @@ def kpt_iou(kpt1, kpt2, area, sigma, eps=1e-7):
     Returns:
         (torch.Tensor): A tensor of shape (N, M) representing keypoint similarities.
     """
-    d = (kpt1[:, None, :, 0] - kpt2[..., 0]).pow(2) + (kpt1[:, None, :, 1] - kpt2[..., 1]).pow(2)  # (N, M, 17)
+    d = (kpt1[:, None, :, 0] - kpt2[..., 0]) ** 2 + (kpt1[:, None, :, 1] - kpt2[..., 1]) ** 2  # (N, M, 17)
     sigma = torch.tensor(sigma, device=kpt1.device, dtype=kpt1.dtype)  # (17, )
     kpt_mask = kpt1[..., 2] != 0  # (N, 17)
-    e = d / ((2 * sigma).pow(2) * (area[:, None, None] + eps) * 2)  # from cocoeval
+    e = d / (2 * sigma) ** 2 / (area[:, None, None] + eps) / 2  # from cocoeval
     # e = d / ((area[None, :, None] + eps) * sigma) ** 2 / 2  # from formula
-    return ((-e).exp() * kpt_mask[:, None]).sum(-1) / (kpt_mask.sum(-1)[:, None] + eps)
+    return (torch.exp(-e) * kpt_mask[:, None]).sum(-1) / (kpt_mask.sum(-1)[:, None] + eps)
 
 
 def _get_covariance_matrix(boxes):
@@ -183,18 +193,18 @@ def _get_covariance_matrix(boxes):
         (torch.Tensor): Covariance metrixs corresponding to original rotated bounding boxes.
     """
     # Gaussian bounding boxes, ignore the center points (the first two columns) because they are not needed here.
-    gbbs = torch.cat((boxes[:, 2:4].pow(2) / 12, boxes[:, 4:]), dim=-1)
+    gbbs = torch.cat((torch.pow(boxes[:, 2:4], 2) / 12, boxes[:, 4:]), dim=-1)
     a, b, c = gbbs.split(1, dim=-1)
-    cos = c.cos()
-    sin = c.sin()
-    cos2 = cos.pow(2)
-    sin2 = sin.pow(2)
-    return a * cos2 + b * sin2, a * sin2 + b * cos2, (a - b) * cos * sin
+    return (
+        a * torch.cos(c) ** 2 + b * torch.sin(c) ** 2,
+        a * torch.sin(c) ** 2 + b * torch.cos(c) ** 2,
+        a * torch.cos(c) * torch.sin(c) - b * torch.sin(c) * torch.cos(c),
+    )
 
 
 def probiou(obb1, obb2, CIoU=False, eps=1e-7):
     """
-    Calculate the prob IoU between oriented bounding boxes, https://arxiv.org/pdf/2106.06072v1.pdf.
+    Calculate the prob iou between oriented bounding boxes, https://arxiv.org/pdf/2106.06072v1.pdf.
 
     Args:
         obb1 (torch.Tensor): A tensor of shape (N, 5) representing ground truth obbs, with xywhr format.
@@ -210,21 +220,26 @@ def probiou(obb1, obb2, CIoU=False, eps=1e-7):
     a2, b2, c2 = _get_covariance_matrix(obb2)
 
     t1 = (
-        ((a1 + a2) * (y1 - y2).pow(2) + (b1 + b2) * (x1 - x2).pow(2)) / ((a1 + a2) * (b1 + b2) - (c1 + c2).pow(2) + eps)
+        ((a1 + a2) * (torch.pow(y1 - y2, 2)) + (b1 + b2) * (torch.pow(x1 - x2, 2)))
+        / ((a1 + a2) * (b1 + b2) - (torch.pow(c1 + c2, 2)) + eps)
     ) * 0.25
-    t2 = (((c1 + c2) * (x2 - x1) * (y1 - y2)) / ((a1 + a2) * (b1 + b2) - (c1 + c2).pow(2) + eps)) * 0.5
+    t2 = (((c1 + c2) * (x2 - x1) * (y1 - y2)) / ((a1 + a2) * (b1 + b2) - (torch.pow(c1 + c2, 2)) + eps)) * 0.5
     t3 = (
-        ((a1 + a2) * (b1 + b2) - (c1 + c2).pow(2))
-        / (4 * ((a1 * b1 - c1.pow(2)).clamp_(0) * (a2 * b2 - c2.pow(2)).clamp_(0)).sqrt() + eps)
-        + eps
-    ).log() * 0.5
-    bd = (t1 + t2 + t3).clamp(eps, 100.0)
-    hd = (1.0 - (-bd).exp() + eps).sqrt()
+        torch.log(
+            ((a1 + a2) * (b1 + b2) - (torch.pow(c1 + c2, 2)))
+            / (4 * torch.sqrt((a1 * b1 - torch.pow(c1, 2)).clamp_(0) * (a2 * b2 - torch.pow(c2, 2)).clamp_(0)) + eps)
+            + eps
+        )
+        * 0.5
+    )
+    bd = t1 + t2 + t3
+    bd = torch.clamp(bd, eps, 100.0)
+    hd = torch.sqrt(1.0 - torch.exp(-bd) + eps)
     iou = 1 - hd
     if CIoU:  # only include the wh aspect ratio part
         w1, h1 = obb1[..., 2:4].split(1, dim=-1)
         w2, h2 = obb2[..., 2:4].split(1, dim=-1)
-        v = (4 / math.pi**2) * ((w2 / h2).atan() - (w1 / h1).atan()).pow(2)
+        v = (4 / math.pi**2) * (torch.atan(w2 / h2) - torch.atan(w1 / h1)).pow(2)
         with torch.no_grad():
             alpha = v / (v - iou + (1 + eps))
         return iou - v * alpha  # CIoU
@@ -233,7 +248,7 @@ def probiou(obb1, obb2, CIoU=False, eps=1e-7):
 
 def batch_probiou(obb1, obb2, eps=1e-7):
     """
-    Calculate the prob IoU between oriented bounding boxes, https://arxiv.org/pdf/2106.06072v1.pdf.
+    Calculate the prob iou between oriented bounding boxes, https://arxiv.org/pdf/2106.06072v1.pdf.
 
     Args:
         obb1 (torch.Tensor | np.ndarray): A tensor of shape (N, 5) representing ground truth obbs, with xywhr format.
@@ -252,16 +267,21 @@ def batch_probiou(obb1, obb2, eps=1e-7):
     a2, b2, c2 = (x.squeeze(-1)[None] for x in _get_covariance_matrix(obb2))
 
     t1 = (
-        ((a1 + a2) * (y1 - y2).pow(2) + (b1 + b2) * (x1 - x2).pow(2)) / ((a1 + a2) * (b1 + b2) - (c1 + c2).pow(2) + eps)
+        ((a1 + a2) * (torch.pow(y1 - y2, 2)) + (b1 + b2) * (torch.pow(x1 - x2, 2)))
+        / ((a1 + a2) * (b1 + b2) - (torch.pow(c1 + c2, 2)) + eps)
     ) * 0.25
-    t2 = (((c1 + c2) * (x2 - x1) * (y1 - y2)) / ((a1 + a2) * (b1 + b2) - (c1 + c2).pow(2) + eps)) * 0.5
+    t2 = (((c1 + c2) * (x2 - x1) * (y1 - y2)) / ((a1 + a2) * (b1 + b2) - (torch.pow(c1 + c2, 2)) + eps)) * 0.5
     t3 = (
-        ((a1 + a2) * (b1 + b2) - (c1 + c2).pow(2))
-        / (4 * ((a1 * b1 - c1.pow(2)).clamp_(0) * (a2 * b2 - c2.pow(2)).clamp_(0)).sqrt() + eps)
-        + eps
-    ).log() * 0.5
-    bd = (t1 + t2 + t3).clamp(eps, 100.0)
-    hd = (1.0 - (-bd).exp() + eps).sqrt()
+        torch.log(
+            ((a1 + a2) * (b1 + b2) - (torch.pow(c1 + c2, 2)))
+            / (4 * torch.sqrt((a1 * b1 - torch.pow(c1, 2)).clamp_(0) * (a2 * b2 - torch.pow(c2, 2)).clamp_(0)) + eps)
+            + eps
+        )
+        * 0.5
+    )
+    bd = t1 + t2 + t3
+    bd = torch.clamp(bd, eps, 100.0)
+    hd = torch.sqrt(1.0 - torch.exp(-bd) + eps)
     return 1 - hd
 
 
@@ -298,7 +318,7 @@ class ConfusionMatrix:
         self.task = task
         self.matrix = np.zeros((nc + 1, nc + 1)) if self.task == "detect" else np.zeros((nc, nc))
         self.nc = nc  # number of classes
-        self.conf = 0.25 if conf in {None, 0.001} else conf  # apply 0.25 if default val conf is passed
+        self.conf = 0.25 if conf in (None, 0.001) else conf  # apply 0.25 if default val conf is passed
         self.iou_thres = iou_thres
 
     def process_cls_preds(self, preds, targets):
@@ -395,19 +415,19 @@ class ConfusionMatrix:
             names (tuple): Names of classes, used as labels on the plot.
             on_plot (func): An optional callback to pass plots path and data when they are rendered.
         """
-        import seaborn  # scope for faster 'import ultralytics'
+        import seaborn as sn
 
         array = self.matrix / ((self.matrix.sum(0).reshape(1, -1) + 1e-9) if normalize else 1)  # normalize columns
         array[array < 0.005] = np.nan  # don't annotate (would appear as 0.00)
 
         fig, ax = plt.subplots(1, 1, figsize=(12, 9), tight_layout=True)
         nc, nn = self.nc, len(names)  # number of classes, names
-        seaborn.set_theme(font_scale=1.0 if nc < 50 else 0.8)  # for label size
+        sn.set(font_scale=1.0 if nc < 50 else 0.8)  # for label size
         labels = (0 < nn < 99) and (nn == nc)  # apply names to ticklabels
         ticklabels = (list(names) + ["background"]) if labels else "auto"
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")  # suppress empty matrix RuntimeWarning: All-NaN slice encountered
-            seaborn.heatmap(
+            sn.heatmap(
                 array,
                 ax=ax,
                 annot=nc < 30,

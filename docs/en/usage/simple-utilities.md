@@ -12,17 +12,6 @@ keywords: Ultralytics, YOLO, custom, function, workflow, utility, support,
 
 The `ultralytics` package comes with a myriad of utilities that can support, enhance, and speed up your workflows. There are many more available, but here are some that will be useful for most developers. They're also a great reference point to use when learning to program.
 
-<p align="center">
-  <br>
-  <iframe loading="lazy" width="720" height="405" src="https://www.youtube.com/embed/1bPY2LRG590"
-    title="YouTube video player" frameborder="0"
-    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-    allowfullscreen>
-  </iframe>
-  <br>
-  <strong>Watch:</strong> Ultralytics Utilities | Auto Annotation, Explorer API and Dataset Conversion
-</p>
-
 ## Data
 
 ### YOLO Data Explorer
@@ -31,7 +20,7 @@ The `ultralytics` package comes with a myriad of utilities that can support, enh
 
 ### Auto Labeling / Annotations
 
-Dataset annotation is a very resource intensive and time-consuming process. If you have a YOLO object detection model trained on a reasonable amount of data, you can use it and [SAM](../models/sam.md) to auto-annotate additional data (segmentation format).
+Dataset annotation is an _extremely_ resource heavy and time consuming process. If you have a YOLO object detection model trained on a reasonable amount of data, you can use it and [SAM](../models/sam.md) to auto-annotate additional data (segmentation format).
 
 ```{ .py .annotate }
 from ultralytics.data.annotator import auto_annotate
@@ -69,28 +58,6 @@ convert_coco(#(1)!
 1. Nothing returns from this function
 
 For additional information about the `convert_coco` function, [visit the reference page](../reference/data/converter.md#ultralytics.data.converter.convert_coco)
-
-### Get Bounding Box Dimensions
-
-```{.py .annotate }
-from ultralytics.utils.plotting import Annotator
-from ultralytics import YOLO
-import cv2
-
-model = YOLO('yolov8n.pt')  # Load pretrain or fine-tune model
-
-# Process the image
-source = cv2.imread('path/to/image.jpg')
-results = model(source)
-
-# Extract results
-annotator = Annotator(source, example=model.names)
-
-for box in results[0].boxes.xyxy.cpu():
-    width, height, area = annotator.get_bbox_dimension(box)
-    print("Bounding Box Width {}, Height {}, Area {}".format(
-        width.item(), height.item(), area.item()))
-```
 
 ### Convert Bounding Boxes to Segments
 
@@ -165,7 +132,7 @@ for f in Path('path/to/dataset').rglob('*.jpg'):
 
 ### Auto-split Dataset
 
-Automatically split a dataset into `train`/`val`/`test` splits and save the resulting splits into `autosplit_*.txt` files. This function will use random sampling, which is not included when using [`fraction` argument for training](../modes/train.md#train-settings).
+Automatically split a dataset into `train`/`val`/`test` splits and save the resulting splits into `autosplit_*.txt` files. This function will use random sampling, which is not included when using [`fraction` argument for training](../modes/train.md#arguments).
 
 ```{ .py .annotate }
 from ultralytics.data.utils import autosplit
@@ -244,8 +211,7 @@ boxes.bboxes
 See the [`Bboxes` reference section](../reference/utils/instance.md#ultralytics.utils.instance.Bboxes) for more attributes and methods available.
 
 !!! tip
-
-    Many of the following functions (and more) can be accessed using the [`Bboxes` class](#bounding-box-horizontal-instances) but if you prefer to work with the functions directly, see the next subsections on how to import these independently.
+    Many of the following functions (and more) can be accessed using the [`Bboxes` class](#bounding-box-horizontal-instances) but if you prefer to work with the functions directly, see the next sub-sections on how to import these independently. 
 
 ### Scaling Boxes
 
@@ -292,7 +258,7 @@ new_boxes#(1)!
 
 1. Bounding boxes scaled for the new image size
 
-### Bounding Box Format Conversions
+### Bounding Box Format Conversions 
 
 #### XYXY → XYWH
 
@@ -385,7 +351,6 @@ image_with_bboxes = ann.result()
 1. Names can be used from `model.names` when [working with detection results](../modes/predict.md#working-with-results)
 
 #### Oriented Bounding Boxes (OBB)
-
 ```python
 import cv2 as cv
 import numpy as np
@@ -420,9 +385,9 @@ for obb in obb_boxes:
 image_with_obb = ann.result()
 ```
 
-See the [`Annotator` Reference Page](../reference/utils/plotting.md#ultralytics.utils.plotting.Annotator) for additional insight.
+See the [`Annotator` Reference Page](../reference/utils/plotting.md#ultralytics.utils.plotting.Annotator) page for additional insight.
 
-## Miscellaneous
+## Miscellaneous 
 
 ### Code Profiling
 

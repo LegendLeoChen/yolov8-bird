@@ -41,8 +41,8 @@ Here are some of the standout functionalities:
 
 !!! Tip "Tip"
 
-    * Export to [ONNX](../integrations/onnx.md) or [OpenVINO](../integrations/openvino.md) for up to 3x CPU speedup.
-    * Export to [TensorRT](../integrations/tensorrt.md) for up to 5x GPU speedup.
+    * Export to ONNX or OpenVINO for up to 3x CPU speedup.
+    * Export to TensorRT for up to 5x GPU speedup.
 
 ## Usage Examples
 
@@ -74,39 +74,38 @@ Export a YOLOv8n model to a different format like ONNX or TensorRT. See Argument
 
 This table details the configurations and options available for exporting YOLO models to different formats. These settings are critical for optimizing the exported model's performance, size, and compatibility across various platforms and environments. Proper configuration ensures that the model is ready for deployment in the intended application with optimal efficiency.
 
-| Argument    | Type             | Default         | Description                                                                                                                                                      |
-|-------------|------------------|-----------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `format`    | `str`            | `'torchscript'` | Target format for the exported model, such as `'onnx'`, `'torchscript'`, `'tensorflow'`, or others, defining compatibility with various deployment environments. |
-| `imgsz`     | `int` or `tuple` | `640`           | Desired image size for the model input. Can be an integer for square images or a tuple `(height, width)` for specific dimensions.                                |
-| `keras`     | `bool`           | `False`         | Enables export to Keras format for TensorFlow SavedModel, providing compatibility with TensorFlow serving and APIs.                                              |
-| `optimize`  | `bool`           | `False`         | Applies optimization for mobile devices when exporting to TorchScript, potentially reducing model size and improving performance.                                |
-| `half`      | `bool`           | `False`         | Enables FP16 (half-precision) quantization, reducing model size and potentially speeding up inference on supported hardware.                                     |
-| `int8`      | `bool`           | `False`         | Activates INT8 quantization, further compressing the model and speeding up inference with minimal accuracy loss, primarily for edge devices.                     |
-| `dynamic`   | `bool`           | `False`         | Allows dynamic input sizes for ONNX and TensorRT exports, enhancing flexibility in handling varying image dimensions.                                            |
-| `simplify`  | `bool`           | `False`         | Simplifies the model graph for ONNX exports, potentially improving performance and compatibility.                                                                |
-| `opset`     | `int`            | `None`          | Specifies the ONNX opset version for compatibility with different ONNX parsers and runtimes. If not set, uses the latest supported version.                      |
-| `workspace` | `float`          | `4.0`           | Sets the maximum workspace size in GiB for TensorRT optimizations, balancing memory usage and performance.                                                       |
-| `nms`       | `bool`           | `False`         | Adds Non-Maximum Suppression (NMS) to the CoreML export, essential for accurate and efficient detection post-processing.                                         |
-| `batch`     | `int`            | `1`             | Specifies export model batch inference size  or the max number of images the exported model will process concurrently in `predict` mode.                         |
+| Key         | Default Value   | Description                                                                                                                                                       |
+|-------------|-----------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `format`    | `'torchscript'` | Specifies the export format. Supported values include `'torchscript'`, `'onnx'`, `'coreml'`, `'engine'` (TensorRT), `'saved_model'` (TensorFlow SavedModel), etc. |
+| `imgsz`     | `640`           | Defines the image size for export. Accepts an integer for square images or a tuple `(height, width)` for non-square images.                                       |
+| `keras`     | `False`         | When exporting to TensorFlow SavedModel, setting this to `True` utilizes Keras for the export process.                                                            |
+| `optimize`  | `False`         | Applies to TorchScript exports, enabling optimization for mobile deployments.                                                                                     |
+| `half`      | `False`         | Enables half-precision (FP16) quantization for the exported model, reducing size and potentially increasing inference speed on compatible hardware.               |
+| `int8`      | `False`         | Activates INT8 quantization, further reducing model size and increasing inference speed at the cost of precision. Useful for edge devices.                        |
+| `dynamic`   | `False`         | For ONNX and TensorRT formats, enables dynamic axes, allowing variable input sizes for inference.                                                                 |
+| `simplify`  | `False`         | Simplifies the model structure for ONNX and TensorRT formats, potentially improving efficiency and compatibility.                                                 |
+| `opset`     | `None`          | Specifies the ONNX opset version for export. If not set, uses the latest supported version. Useful for ensuring compatibility with older ONNX parsers.            |
+| `workspace` | `4`             | Defines the maximum workspace size in GB for TensorRT exports, affecting the optimization process and memory usage.                                               |
+| `nms`       | `False`         | When exporting to CoreML, adds a Non-Maximum Suppression (NMS) layer to the model, useful for filtering overlapping detections.                                   |
 
 Adjusting these parameters allows for customization of the export process to fit specific requirements, such as deployment environment, hardware constraints, and performance targets. Selecting the appropriate format and settings is essential for achieving the best balance between model size, speed, and accuracy.
 
 ## Export Formats
 
-Available YOLOv8 export formats are in the table below. You can export to any format using the `format` argument, i.e. `format='onnx'` or `format='engine'`. You can predict or validate directly on exported models, i.e. `yolo predict model=yolov8n.onnx`. Usage examples are shown for your model after export completes.
+Available YOLOv8 export formats are in the table below. You can export to any format using the `format` argument, i.e. `format='onnx'` or `format='engine'`.
 
-| Format                                            | `format` Argument | Model                     | Metadata | Arguments                                                            |
-|---------------------------------------------------|-------------------|---------------------------|----------|----------------------------------------------------------------------|
-| [PyTorch](https://pytorch.org/)                   | -                 | `yolov8n.pt`              | ✅       | -                                                                    |
-| [TorchScript](../integrations/torchscript.md)     | `torchscript`     | `yolov8n.torchscript`     | ✅       | `imgsz`, `optimize`, `batch`                                         |
-| [ONNX](../integrations/onnx.md)                   | `onnx`            | `yolov8n.onnx`            | ✅       | `imgsz`, `half`, `dynamic`, `simplify`, `opset`, `batch`             |
-| [OpenVINO](../integrations/openvino.md)           | `openvino`        | `yolov8n_openvino_model/` | ✅       | `imgsz`, `half`, `int8`, `batch`                                     |
-| [TensorRT](../integrations/tensorrt.md)           | `engine`          | `yolov8n.engine`          | ✅       | `imgsz`, `half`, `dynamic`, `simplify`, `workspace`, `int8`, `batch` |
-| [CoreML](../integrations/coreml.md)               | `coreml`          | `yolov8n.mlpackage`       | ✅       | `imgsz`, `half`, `int8`, `nms`, `batch`                              |
-| [TF SavedModel](../integrations/tf-savedmodel.md) | `saved_model`     | `yolov8n_saved_model/`    | ✅       | `imgsz`, `keras`, `int8`, `batch`                                    |
-| [TF GraphDef](../integrations/tf-graphdef.md)     | `pb`              | `yolov8n.pb`              | ❌       | `imgsz`, `batch`                                                     |
-| [TF Lite](../integrations/tflite.md)              | `tflite`          | `yolov8n.tflite`          | ✅       | `imgsz`, `half`, `int8`, `batch`                                     |
-| [TF Edge TPU](../integrations/edge-tpu.md)        | `edgetpu`         | `yolov8n_edgetpu.tflite`  | ✅       | `imgsz`, `batch`                                                     |
-| [TF.js](../integrations/tfjs.md)                  | `tfjs`            | `yolov8n_web_model/`      | ✅       | `imgsz`, `half`, `int8`, `batch`                                     |
-| [PaddlePaddle](../integrations/paddlepaddle.md)   | `paddle`          | `yolov8n_paddle_model/`   | ✅       | `imgsz`, `batch`                                                     |
-| [NCNN](../integrations/ncnn.md)                   | `ncnn`            | `yolov8n_ncnn_model/`     | ✅       | `imgsz`, `half`, `batch`                                             |
+| Format                                                             | `format` Argument | Model                     | Metadata | Arguments                                           |
+|--------------------------------------------------------------------|-------------------|---------------------------|----------|-----------------------------------------------------|
+| [PyTorch](https://pytorch.org/)                                    | -                 | `yolov8n.pt`              | ✅        | -                                                   |
+| [TorchScript](https://pytorch.org/docs/stable/jit.html)            | `torchscript`     | `yolov8n.torchscript`     | ✅        | `imgsz`, `optimize`                                 |
+| [ONNX](https://onnx.ai/)                                           | `onnx`            | `yolov8n.onnx`            | ✅        | `imgsz`, `half`, `dynamic`, `simplify`, `opset`     |
+| [OpenVINO](../integrations/openvino.md)                            | `openvino`        | `yolov8n_openvino_model/` | ✅        | `imgsz`, `half`, `int8`                             |
+| [TensorRT](https://developer.nvidia.com/tensorrt)                  | `engine`          | `yolov8n.engine`          | ✅        | `imgsz`, `half`, `dynamic`, `simplify`, `workspace` |
+| [CoreML](https://github.com/apple/coremltools)                     | `coreml`          | `yolov8n.mlpackage`       | ✅        | `imgsz`, `half`, `int8`, `nms`                      |
+| [TF SavedModel](https://www.tensorflow.org/guide/saved_model)      | `saved_model`     | `yolov8n_saved_model/`    | ✅        | `imgsz`, `keras`, `int8`                            |
+| [TF GraphDef](https://www.tensorflow.org/api_docs/python/tf/Graph) | `pb`              | `yolov8n.pb`              | ❌        | `imgsz`                                             |
+| [TF Lite](https://www.tensorflow.org/lite)                         | `tflite`          | `yolov8n.tflite`          | ✅        | `imgsz`, `half`, `int8`                             |
+| [TF Edge TPU](https://coral.ai/docs/edgetpu/models-intro/)         | `edgetpu`         | `yolov8n_edgetpu.tflite`  | ✅        | `imgsz`                                             |
+| [TF.js](https://www.tensorflow.org/js)                             | `tfjs`            | `yolov8n_web_model/`      | ✅        | `imgsz`, `half`, `int8`                             |
+| [PaddlePaddle](https://github.com/PaddlePaddle)                    | `paddle`          | `yolov8n_paddle_model/`   | ✅        | `imgsz`                                             |
+| [ncnn](https://github.com/Tencent/ncnn)                            | `ncnn`            | `yolov8n_ncnn_model/`     | ✅        | `imgsz`, `half`                                     |

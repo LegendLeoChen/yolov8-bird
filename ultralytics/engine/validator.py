@@ -3,7 +3,7 @@
 Check a model's accuracy on a test or val split of a dataset.
 
 Usage:
-    $ yolo mode=val model=yolov8n.pt data=coco8.yaml imgsz=640
+    $ yolo mode=val model=yolov8n.pt data=coco128.yaml imgsz=640
 
 Usage - formats:
     $ yolo mode=val model=yolov8n.pt                 # PyTorch
@@ -17,9 +17,7 @@ Usage - formats:
                           yolov8n.tflite             # TensorFlow Lite
                           yolov8n_edgetpu.tflite     # TensorFlow Edge TPU
                           yolov8n_paddle_model       # PaddlePaddle
-                          yolov8n_ncnn_model         # NCNN
 """
-
 import json
 import time
 from pathlib import Path
@@ -114,15 +112,16 @@ class BaseValidator:
             self.data = trainer.data
             self.args.half = self.device.type != "cpu"  # force FP16 val during training
             model = trainer.ema.ema or trainer.model
-            model = model.half() if self.args.half else model.float()
+            # model = model.half() if self.args.half else model.float()
             # self.model = model
             self.loss = torch.zeros_like(trainer.loss_items, device=trainer.device)
             self.args.plots &= trainer.stopper.possible_stop or (trainer.epoch == trainer.epochs - 1)
             model.eval()
+            self.args.half = False
         else:
             callbacks.add_integration_callbacks(self)
             model = AutoBackend(
-                weights=model or self.args.model,
+                model or self.args.model,
                 device=select_device(self.args.device, self.args.batch),
                 dnn=self.args.dnn,
                 data=self.args.data,
@@ -139,14 +138,14 @@ class BaseValidator:
                 self.args.batch = 1  # export.py models default to batch-size 1
                 LOGGER.info(f"Forcing batch=1 square inference (1,3,{imgsz},{imgsz}) for non-PyTorch models")
 
-            if str(self.args.data).split(".")[-1] in {"yaml", "yml"}:
+            if str(self.args.data).split(".")[-1] in ("yaml", "yml"):
                 self.data = check_det_dataset(self.args.data)
             elif self.args.task == "classify":
                 self.data = check_cls_dataset(self.args.data, split=self.args.split)
             else:
                 raise FileNotFoundError(emojis(f"Dataset '{self.args.data}' for task={self.args.task} not found ❌"))
 
-            if self.device.type in {"cpu", "mps"}:
+            if self.device.type in ("cpu", "mps"):
                 self.args.workers = 0  # faster CPU val as time dominated by inference, not dataloading
             if not pt:
                 self.args.rect = False

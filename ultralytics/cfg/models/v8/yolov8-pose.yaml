@@ -3,7 +3,7 @@
 
 # Parameters
 nc: 1 # number of classes
-kpt_shape: [17, 3] # number of keypoints, number of dims (2 for x,y or 3 for x,y,visible)
+kpt_shape: [9, 3] # number of keypoints, number of dims (2 for x,y or 3 for x,y,visible)
 scales: # model compound scaling constants, i.e. 'model=yolov8n-pose.yaml' will call yolov8-pose.yaml with scale 'n'
   # [depth, width, max_channels]
   n: [0.33, 0.25, 1024]
@@ -15,16 +15,39 @@ scales: # model compound scaling constants, i.e. 'model=yolov8n-pose.yaml' will 
 # YOLOv8.0n backbone
 backbone:
   # [from, repeats, module, args]
-  - [-1, 1, Conv, [64, 3, 2]] # 0-P1/2
-  - [-1, 1, Conv, [128, 3, 2]] # 1-P2/4
-  - [-1, 3, C2f, [128, True]]
-  - [-1, 1, Conv, [256, 3, 2]] # 3-P3/8
-  - [-1, 6, C2f, [256, True]]
-  - [-1, 1, Conv, [512, 3, 2]] # 5-P4/16
-  - [-1, 6, C2f, [512, True]]
-  - [-1, 1, Conv, [1024, 3, 2]] # 7-P5/32
-  - [-1, 3, C2f, [1024, True]]
-  - [-1, 1, SPPF, [1024, 5]] # 9
+#  - [-1, 1, Conv, [64, 3, 2]] # 0-P1/2
+#  - [-1, 1, Conv, [128, 3, 2]] # 1-P2/4
+#  - [ -1, 3, C2f, [ 128, True ] ]
+#  - [-1, 1, Conv, [256, 3, 2]] # 3-P3/8
+#  - [-1, 1, ViT, [64, 80, 1, 32, 1, 8, 64, 80]]
+#  - [-1, 1, Conv, [512, 3, 2]] # 5-P4/16
+#  - [-1, 1, ViT, [128, 40, 1, 64, 1, 8, 128, 40]]
+#  - [-1, 1, Conv, [1024, 3, 2]] # 7-P5/32
+#  - [-1, 1, ViT, [256, 20, 1, 128, 1, 8, 256, 20]]
+#  - [-1, 1, SPPF, [1024, 5]] # 9
+
+#  - [-1, 1, Conv, [64, 3, 2]] # 0-P1/2
+#  - [-1, 1, Conv, [128, 3, 2]] # 1-P2/4
+#  - [ -1, 3, C2f, [ 128, True ] ]
+#  - [-1, 1, Conv, [256, 3, 2]] # 3-P3/8
+#  - [-1, 1, ViT, [64, 80, 1, 256, 1, 16, 64, 80]]
+#  - [-1, 1, Conv, [512, 3, 2]] # 5-P4/16
+#  - [-1, 1, ViT, [128, 40, 1, 128, 2, 8, 128, 40]]
+#  - [-1, 1, Conv, [1024, 3, 2]] # 7-P5/32
+#  - [-1, 1, ViT, [256, 20, 1, 128, 2, 4, 256, 20]]
+#  - [-1, 1, SPPF, [1024, 5]] # 9
+
+# 原版
+  - [ -1, 1, Conv, [ 64, 3, 2 ] ] # 0-P1/2
+  - [ -1, 1, Conv, [ 128, 3, 2 ] ] # 1-P2/4
+  - [ -1, 3, C2f, [ 128, True ] ]
+  - [ -1, 1, Conv, [ 256, 3, 2 ] ] # 3-P3/8
+  - [ -1, 6, C2f, [ 256, True ] ]
+  - [ -1, 1, Conv, [ 512, 3, 2 ] ] # 5-P4/16
+  - [ -1, 6, C2f, [ 512, True ] ]
+  - [ -1, 1, Conv, [ 1024, 3, 2 ] ] # 7-P5/32
+  - [ -1, 3, C2f, [ 1024, True ] ]
+  - [ -1, 1, SPPF, [ 1024, 5 ] ] # 9
 
 # YOLOv8.0n head
 head:

@@ -215,7 +215,7 @@ class LayerNorm2d(nn.Module):
 
 class MSDeformAttn(nn.Module):
     """
-    Multiscale Deformable Attention Module based on Deformable-DETR and PaddleDetection implementations.
+    Multi-Scale Deformable Attention Module based on Deformable-DETR and PaddleDetection implementations.
 
     https://github.com/fundamentalvision/Deformable-DETR/blob/main/models/ops/modules/ms_deform_attn.py
     """
