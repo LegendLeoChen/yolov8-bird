@@ -1,4 +1,8 @@
 > 原项目：https://github.com/ultralytics/ultralytics
+> 本项目数据集：
+> 百度网盘：https://pan.baidu.com/s/1IAbgjSZs9G7XmKPEwMiBdw?pwd=1213 提取码：1213
+> google：https://drive.google.com/drive/folders/12iIgp0_4aPTHtyqNYhfS4ZwWmwBjVXlE?usp=drive_link
+
 # 概述
 - 项目在YOLOv8基础上，以鸟类姿态检测为目标，设计了鸟类关键点，使用新的关键点回归损失函数，使用ViT模块改变网络结构，设计了外接的卷积输出网络将关键点映射到鸟类姿态分类，提供基于拼接的数据增强操作。
 # 项目结构
