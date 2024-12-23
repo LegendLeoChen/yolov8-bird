@@ -3,6 +3,7 @@
 [English README](README-en.md)
 # 🔥本项目数据集链接
 [百度网盘](https://pan.baidu.com/s/1IAbgjSZs9G7XmKPEwMiBdw?pwd=1213) 提取码：1213
+
 [google网盘](https://drive.google.com/drive/folders/12iIgp0_4aPTHtyqNYhfS4ZwWmwBjVXlE?usp=drive_link)
 - bird_pose.zip值姿态输出卷积网络数据集，posehead.pt是其训练好的模型。
 bird.zip则是YOLOv8 COCO格式的关键点检测数据集，best.pt是本工作训练好的对应数据集（并非最强）。

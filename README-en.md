@@ -16,6 +16,7 @@ This project is based on YOLOv8, focusing on bird pose detection as the task. It
 # 🔥Technology
 ## Bird Keypoint Design
 The label structure of the dataset is based on the following image:
+
 ![鸟类关键点](./记录/keypoint.png)
 
 ## YOLOv8 Bird Keypoint Dataset
@@ -25,23 +26,31 @@ The overall format of the COCO dataset labels for YOLO keypoints is as follows:
 
 ## Data Augmentation
 YOLOv8 comes with several data augmentation techniques. I implemented a similar one. If you need to use it additionally, the project also provides this script. The process is as follows: provide a background folder containing various background images without birds, slightly enlarge the bounding boxes of the annotated bird dataset, and paste them onto the background images. You can choose to paste multiple targets and set the scaling factor.
+
 ![数据增强流程](./记录/data%20augmentation.png)  
+
 The results are shown in the following image:
+
 ![数据增强](./记录/数据增强.png)
 
 ## Keypoints -> Pose Classification
 By connecting an external convolutional output network to the YOLOv8 keypoint output, pose classification can be obtained. The network structure is very simple, which reflects the efficiency of keypoint detection for pose estimation. This output network can be trained separately from YOLOv8, allowing for different output networks to be designed for various tasks.
+
 ![外接的输出卷积网络](./记录/new%20CNN.png)  
+
 **Annotated datasets to train this network**:  
 I wrote an annotation script using Python's Tkinter library, which displays the annotated images sequentially and allows the corresponding targets to be selected one by one. The classification is achieved by typing 0 or 1 on the keyboard, generating the corresponding label file in the format: `<class-index> <px1> <py1> <px2> <py2> …<pxn> <pyn>`.
+
 ![标注工具](./记录/标注工具.png)
 
 ## New Loss Function
 You can choose to use the newly designed loss function for training (it may not necessarily be more effective):
+
 ![损失函数](./记录/loss.png)
 
 ## New Network with ViT
 You can choose whether to use the ViT module to change the network structure (it will be slower):
+
 ![数据增强](./记录/最终网络.png)
 
 # 🔥Project Structure
